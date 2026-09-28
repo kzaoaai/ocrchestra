@@ -84,6 +84,12 @@ type Word struct {
 // Class assign 'ocrx_word' to 'Word' struct
 func (Word) Class() string { return "ocrx_word" }
 
+// NoSpaceAfter is the Word.Metadata key that marks a word the next word in the
+// line follows without a space, as punctuation follows the word before it
+// ("Hello" ","). OCR sources that report word breaks set it to "1";
+// words without it are separated by a space.
+const NoSpaceAfter = "x_nospace"
+
 // BoundingBox represents a rectangle in the document
 // Used to store hOCR 'bbox' property values
 type BoundingBox struct {

@@ -345,12 +345,18 @@ func getHocrBoundingBox(layout *documentaipb.Document_Page_Layout, dimension *do
 	if layout == nil || layout.BoundingPoly == nil || dimension == nil || len(layout.BoundingPoly.NormalizedVertices) < 4 {
 		return ""
 	}
+	// Vertices run clockwise from the text's own top-left corner, which is not
+	// the page's top-left for sideways or upside-down text: take the extremes.
 	vertices := layout.BoundingPoly.NormalizedVertices
-	minX := int(vertices[0].X*dimension.Width + 0.5)
-	minY := int(vertices[0].Y*dimension.Height + 0.5)
-	maxX := int(vertices[2].X*dimension.Width + 0.5)
-	maxY := int(vertices[2].Y*dimension.Height + 0.5)
-	return fmt.Sprintf("bbox %d %d %d %d", minX, minY, maxX, maxY)
+	minX, minY := vertices[0].X, vertices[0].Y
+	maxX, maxY := minX, minY
+	for _, v := range vertices[1:] {
+		minX, maxX = min(minX, v.X), max(maxX, v.X)
+		minY, maxY = min(minY, v.Y), max(maxY, v.Y)
+	}
+	return fmt.Sprintf("bbox %d %d %d %d",
+		int(minX*dimension.Width+0.5), int(minY*dimension.Height+0.5),
+		int(maxX*dimension.Width+0.5), int(maxY*dimension.Height+0.5))
 }
 
 // getDocumentLanguage finds the most common language in the document
@@ -441,6 +447,18 @@ func convertLineFromProto(line *documentaipb.Document_Page_Line, page *documenta
 		ocrLine.Lang = line.DetectedLanguages[0].LanguageCode
 	}
 
+	// Sideways or upside-down text: hOCR textangle is counterclockwise degrees.
+	if line.Layout != nil {
+		switch line.Layout.Orientation {
+		case documentaipb.Document_Page_Layout_PAGE_LEFT:
+			ocrLine.Metadata["textangle"] = "90"
+		case documentaipb.Document_Page_Layout_PAGE_DOWN:
+			ocrLine.Metadata["textangle"] = "180"
+		case documentaipb.Document_Page_Layout_PAGE_RIGHT:
+			ocrLine.Metadata["textangle"] = "270"
+		}
+	}
+
 	// Find tokens that belong to this line
 	for tidx, token := range page.Tokens {
 		if !isElementInParent(token.Layout, line.Layout, fullText) {
@@ -477,6 +495,12 @@ func convertLineFromProto(line *documentaipb.Document_Page_Line, page *documenta
 			if bbox := hocr.ParseBoundingBoxFromTitle(tokenBox); bbox != nil {
 				word.BBox = *bbox
 			}
+		}
+
+		// A token without a detected break runs straight into the next one.
+		if token.DetectedBreak == nil ||
+			token.DetectedBreak.Type == documentaipb.Document_Page_Token_DetectedBreak_TYPE_UNSPECIFIED {
+			word.Metadata[hocr.NoSpaceAfter] = "1"
 		}
 
 		// Extract confidence

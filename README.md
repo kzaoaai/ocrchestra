@@ -360,6 +360,18 @@ if err != nil {
 }
 ```
 
+#### Text beyond Latin-1
+The default font, the PDF core font Helvetica, can only encode ISO-8859-1. For text in other scripts, such as Arabic, Hebrew, Greek or Cyrillic, use the embedded Unicode font:
+
+```go
+config := pdfocr.DefaultConfig()
+config.Font = pdfocr.UnicodeFont
+```
+
+The layer then embeds a subset of DejaVu Sans and draws right-to-left text in the visual order the Unicode Bidirectional Algorithm gives each line, so that text extractors return it in reading order. Each line is drawn at one font size on one baseline, which keeps it together when extracted, and lines with an hOCR `textangle` of 90, 180 or 270 degrees are drawn rotated. `pdfocr.UnsupportedRunes` reports the characters a font cannot draw; DejaVu Sans has no CJK, for example.
+
 ## License
 
 [Mozilla Public License 2.0](LICENSE)
+
+The embedded DejaVu Sans font is under its own license, in [pkg/pdfocr/fonts/LICENSE-DejaVu](pkg/pdfocr/fonts/LICENSE-DejaVu).

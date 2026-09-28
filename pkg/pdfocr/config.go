@@ -38,6 +38,10 @@ type FontConfig struct {
 	Style       string  // Font style ("", "B", "I", "BI")
 	Size        float64 // Default font size
 	AscentRatio float64 // Vertical positioning ratio
+	// UTF8 holds TrueType font data. When set, the font is embedded and words are
+	// drawn as Unicode (right-to-left text in visual order); when empty, Name is
+	// a PDF core font and text is limited to ISO-8859-1. See UnicodeFont.
+	UTF8 []byte
 }
 
 // DefaultFont sets the default font to Helvetica which is tried and tested for the OCR layer

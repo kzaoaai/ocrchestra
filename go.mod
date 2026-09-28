@@ -5,6 +5,8 @@ go 1.24.1
 require (
 	cloud.google.com/go/documentai v1.36.1
 	codeberg.org/go-pdf/fpdf v0.11.0
+	github.com/anyascii/go v0.3.2
+	golang.org/x/image v0.26.0
 	golang.org/x/net v0.39.0
 	golang.org/x/text v0.24.0
 	google.golang.org/api v0.229.0
@@ -18,7 +20,6 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.6.0 // indirect
 	cloud.google.com/go/longrunning v0.6.6 // indirect
-	github.com/anyascii/go v0.3.2 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

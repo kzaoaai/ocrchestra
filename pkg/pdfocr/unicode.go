@@ -4,24 +4,28 @@ import (
 	_ "embed"
 	"slices"
 	"sort"
-	"sync"
+	"strings"
 	"unicode"
 
-	"golang.org/x/image/font/sfnt"
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/unicode/bidi"
+
+	"github.com/gardar/ocrchestra/pkg/hocr"
 )
 
 // dejaVuSans is DejaVu Sans 2.37 (see fonts/LICENSE-DejaVu). It covers Latin,
 // Greek, Cyrillic, Arabic and Hebrew; the layer is invisible, so what matters
-// is that its characters map back to Unicode when text is extracted.
+// is that its characters map back to Unicode when text is extracted, which
+// holds for characters it has no glyph for too.
 //
 //go:embed fonts/DejaVuSans.ttf
 var dejaVuSans []byte
 
 // UnicodeFont draws the OCR layer with an embedded Unicode font instead of a
 // PDF core font, so text outside ISO-8859-1 (Arabic, Hebrew, Greek, Cyrillic,
-// ...) is extractable, and right-to-left text is drawn in visual order.
+// CJK, ...) is extractable, and right-to-left text is drawn in visual order.
+// Characters beyond the Basic Multilingual Plane are left out (see
+// UnsupportedRunes).
 var UnicodeFont = FontConfig{
 	Name:        "DejaVuSans",
 	Style:       "",
@@ -30,60 +34,53 @@ var UnicodeFont = FontConfig{
 	UTF8:        dejaVuSans,
 }
 
-// UnsupportedRunes returns the characters of text that font cannot draw as
-// extractable text: for a core font anything outside ISO-8859-1, for a UTF-8
-// font anything missing from its character map. Spaces and control characters
-// are ignored.
+// maxEncodableRune is the last character a UTF-8 font's text can carry: fpdf
+// writes such text as two-byte codes, one per character, and cannot encode
+// characters beyond the Basic Multilingual Plane (emoji, for example). They
+// garble the text and make it fail to produce the PDF.
+const maxEncodableRune = 0xFFFF
+
+// UnsupportedRunes returns the characters of text that font cannot put in the
+// text layer as extractable text: for a core font anything outside
+// ISO-8859-1, for a UTF-8 font anything beyond the Basic Multilingual Plane,
+// which the layer leaves out. A UTF-8 font need not contain a glyph for a
+// character: one it lacks is drawn as its missing-glyph box, invisible in an
+// OCR layer, and still extracts as that character. Spaces and control
+// characters are ignored.
 func UnsupportedRunes(text string, font FontConfig) []rune {
 	var missing []rune
-	if len(font.UTF8) == 0 {
-		encoder := charmap.ISO8859_1.NewEncoder()
-		for _, r := range text {
-			if unicode.IsSpace(r) || unicode.IsControl(r) {
-				continue
-			}
-			if _, err := encoder.String(string(r)); err != nil {
-				missing = append(missing, r)
-			}
-		}
-		return missing
-	}
-
-	parsed, err := parsedFont(font.UTF8)
-	if err != nil {
-		// An unreadable font draws nothing faithfully.
-		for _, r := range text {
-			if !unicode.IsSpace(r) && !unicode.IsControl(r) {
-				missing = append(missing, r)
-			}
-		}
-		return missing
-	}
-	var buf sfnt.Buffer
+	encoder := charmap.ISO8859_1.NewEncoder()
 	for _, r := range text {
 		if unicode.IsSpace(r) || unicode.IsControl(r) {
 			continue
 		}
-		if idx, err := parsed.GlyphIndex(&buf, r); err != nil || idx == 0 {
+		if len(font.UTF8) > 0 {
+			if r > maxEncodableRune {
+				missing = append(missing, r)
+			}
+		} else if _, err := encoder.String(string(r)); err != nil {
 			missing = append(missing, r)
 		}
 	}
 	return missing
 }
 
-var parsedFonts sync.Map // *byte (first byte of the font data) -> *sfnt.Font
-
-func parsedFont(data []byte) (*sfnt.Font, error) {
-	key := &data[0]
-	if f, ok := parsedFonts.Load(key); ok {
-		return f.(*sfnt.Font), nil
+// encodableWords returns words without the characters a UTF-8 font's text
+// cannot carry (see maxEncodableRune), leaving out words with nothing else.
+func encodableWords(words []hocr.Word) []hocr.Word {
+	kept := make([]hocr.Word, 0, len(words))
+	for _, word := range words {
+		word.Text = strings.Map(func(r rune) rune {
+			if r > maxEncodableRune {
+				return -1
+			}
+			return r
+		}, word.Text)
+		if strings.TrimSpace(word.Text) != "" {
+			kept = append(kept, word)
+		}
 	}
-	f, err := sfnt.Parse(data)
-	if err != nil {
-		return nil, err
-	}
-	parsedFonts.Store(key, f)
-	return f, nil
+	return kept
 }
 
 // Bidirectional text. PDF text is laid out left to right, and extractors

@@ -141,8 +141,75 @@ func TestUnsupportedRunes(t *testing.T) {
 	if got := UnsupportedRunes("الحسابات العامة ٣ Café Ωμέγα Привет שלום", UnicodeFont); len(got) != 0 {
 		t.Errorf("Unicode font should cover Arabic, Latin, Greek, Cyrillic, Hebrew; missing %q", string(got))
 	}
-	if got := UnsupportedRunes("東京", UnicodeFont); len(got) != 2 {
-		t.Errorf("Unicode font has no CJK, want 2 missing runes, got %q", string(got))
+	// DejaVu Sans has no glyphs for these, but they are still encoded and
+	// extract correctly.
+	if got := UnsupportedRunes("東京 ភាសា ภาษา हिन्दी", UnicodeFont); len(got) != 0 {
+		t.Errorf("characters without a glyph are still extractable; reported %q", string(got))
+	}
+	if got := UnsupportedRunes("ok 😀 𝑥", UnicodeFont); string(got) != "😀𝑥" {
+		t.Errorf("characters beyond the Basic Multilingual Plane cannot be encoded; got %q", string(got))
+	}
+}
+
+// TestUnicodeLayerMissingAndUnencodableCharacters draws a character the font
+// has no glyph for, which must still extract, and characters beyond the Basic
+// Multilingual Plane, which fpdf cannot encode and the layer leaves out.
+func TestUnicodeLayerMissingAndUnencodableCharacters(t *testing.T) {
+	if _, err := exec.LookPath("pdftotext"); err != nil {
+		t.Skip("pdftotext not installed")
+	}
+	box := func(x1, y1, x2, y2 float64) hocr.BoundingBox { return hocr.BoundingBox{X1: x1, Y1: y1, X2: x2, Y2: y2} }
+	line := func(y float64, words ...string) hocr.Line {
+		l := hocr.Line{BBox: box(100, y, 1500, y+50)}
+		x := 150.0
+		for _, w := range words {
+			width := 40.0 * float64(len([]rune(w)))
+			l.Words = append(l.Words, hocr.Word{Text: w, BBox: box(x, y, x+width, y+50)})
+			x += width + 40
+		}
+		return l
+	}
+	page := hocr.Page{ID: "page_1", PageNumber: 1, BBox: box(0, 0, 1654, 2339), Lines: []hocr.Line{
+		line(150, "Invoice", "東京", "total"),
+		line(300, "smile", "😀", "now"),
+		line(450, "sum𝑥", "end"),
+	}}
+	// Enough plain words that the few left out stay under the layer's
+	// limit on text it cannot encode.
+	for i := 0; i < 12; i++ {
+		page.Lines = append(page.Lines, line(600+float64(i)*100, "plain", "words", "here"))
+	}
+
+	got := extractedLines(extractLayer(t, page))
+	for _, want := range []string{"Invoice 東京 total", "smile now", "sum end"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("no extracted line %q in %q", want, got)
+		}
+	}
+}
+
+// TestUnicodeLayerRejectsMostlyUnencodableText keeps the layer's limit: a page
+// on which more than a tenth of the words cannot be encoded is an error.
+func TestUnicodeLayerRejectsMostlyUnencodableText(t *testing.T) {
+	box := func(x1, y1, x2, y2 float64) hocr.BoundingBox { return hocr.BoundingBox{X1: x1, Y1: y1, X2: x2, Y2: y2} }
+	page := hocr.Page{ID: "page_1", PageNumber: 1, BBox: box(0, 0, 1000, 1000), Lines: []hocr.Line{{
+		BBox: box(100, 100, 900, 150),
+		Words: []hocr.Word{
+			{Text: "😀", BBox: box(100, 100, 150, 150)},
+			{Text: "text", BBox: box(200, 100, 350, 150)},
+			{Text: "𝑥", BBox: box(400, 100, 450, 150)},
+		},
+	}}}
+	img := image.NewGray(image.Rect(0, 0, 1000, 1000))
+	var pngData bytes.Buffer
+	if err := png.Encode(&pngData, img); err != nil {
+		t.Fatal(err)
+	}
+	config := DefaultConfig()
+	config.Font, config.LogWarnings = UnicodeFont, false
+	if _, err := AssembleWithOCR(&hocr.HOCR{Pages: []hocr.Page{page}}, [][]byte{pngData.Bytes()}, config); err == nil ||
+		!strings.Contains(err.Error(), "character encoding issues in 2 of 3 words") {
+		t.Errorf("AssembleWithOCR error = %v, want the encoding limit", err)
 	}
 }
 

@@ -221,7 +221,7 @@ func drawUnicodeLine(pdf *fpdf.Fpdf, words []hocr.Word, lineBox hocr.BoundingBox
 			*encodingErrors++
 		}
 	}
-	words = joinWords(words)
+	words = encodableWords(joinWords(words))
 	if len(words) == 0 {
 		return
 	}

@@ -368,7 +368,7 @@ config := pdfocr.DefaultConfig()
 config.Font = pdfocr.UnicodeFont
 ```
 
-The layer then embeds a subset of DejaVu Sans and draws right-to-left text in the visual order the Unicode Bidirectional Algorithm gives each line, so that text extractors return it in reading order. Each line is drawn at one font size on one baseline, which keeps it together when extracted, and lines with an hOCR `textangle` of 90, 180 or 270 degrees are drawn rotated. `pdfocr.UnsupportedRunes` reports the characters a font cannot draw; DejaVu Sans has no CJK, for example.
+The layer then embeds a subset of DejaVu Sans and draws right-to-left text in the visual order the Unicode Bidirectional Algorithm gives each line, so that text extractors return it in reading order. Each line is drawn at one font size on one baseline, which keeps it together when extracted, and lines with an hOCR `textangle` of 90, 180 or 270 degrees are drawn rotated. `pdfocr.UnsupportedRunes` reports the characters the layer cannot encode: with the Unicode font, characters beyond the Basic Multilingual Plane (emoji, for example), which are left out of the layer. A character the font has no glyph for, such as CJK in DejaVu Sans, is still encoded and extracts correctly.
 
 ## License
 

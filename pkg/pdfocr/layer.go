@@ -152,7 +152,9 @@ func drawWord(pdf *fpdf.Fpdf, word hocr.Word, transform func(x, y float64) (floa
 	pdf.SetFontSize(fontConfig.Size)
 
 	if debug {
-		height := word.BBox.Y2 - word.BBox.Y1
+		_, y1 := transform(word.BBox.X1, word.BBox.Y1)
+		_, y2 := transform(word.BBox.X1, word.BBox.Y2)
+		height := y2 - y1
 		pdf.Rect(x, y-(fontSize*fontConfig.AscentRatio), wordWidth, height, "D")
 	}
 }

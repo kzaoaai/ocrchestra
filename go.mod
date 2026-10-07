@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go/documentai v1.36.1
 	codeberg.org/go-pdf/fpdf v0.11.0
 	github.com/anyascii/go v0.3.2
+	github.com/phpdave11/gofpdi v1.0.13
 	golang.org/x/net v0.39.0
 	golang.org/x/text v0.24.0
 	google.golang.org/api v0.229.0
@@ -25,7 +26,6 @@ require (
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
-	github.com/phpdave11/gofpdi v1.0.13 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.60.0 // indirect
@@ -43,3 +43,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250414145226-207652e42e2e // indirect
 	google.golang.org/grpc v1.71.1 // indirect
 )
+
+replace github.com/phpdave11/gofpdi => github.com/kzaoaai/gofpdi v1.0.14-0.20261007200936-ab5190d6c1da

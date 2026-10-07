@@ -2,6 +2,7 @@ package pdfocr
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 
 	"codeberg.org/go-pdf/fpdf"
@@ -20,9 +21,14 @@ func modifyExistingPDF(
 	fontConfig FontConfig,
 ) ([]byte, error) {
 
+	rs := io.ReadSeeker(bytes.NewReader(inputPDFData))
+	pages, err := pageGeometries(rs)
+	if err != nil {
+		return nil, err
+	}
+
 	pdf := fpdf.New("P", "pt", "", "")
 	importer := gofpdi.NewImporter()
-	rs := io.ReadSeeker(bytes.NewReader(inputPDFData))
 
 	for i, page := range hOCRData.Pages {
 		targetPage := i + startFromPage
@@ -30,17 +36,28 @@ func modifyExistingPDF(
 		// Calculate the actual page number in the PDF
 		actualPageNum := i + 1 // 1-based page number in the resulting PDF
 
-		pdf.AddPageFormat("P", fpdf.SizeType{Wd: page.BBox.X2, Ht: page.BBox.Y2})
+		geom, ok := pages[targetPage]
+		if !ok {
+			return nil, fmt.Errorf("hOCR page %d has no page %d in the PDF", i+1, targetPage)
+		}
+		hocrW, hocrH := page.BBox.X2, page.BBox.Y2
+		if err := geom.checkAspect(hocrW, hocrH); err != nil {
+			return nil, fmt.Errorf("page %d: %w", targetPage, err)
+		}
+
+		// The output page keeps the original page's size; the hOCR, measured in
+		// pixels of the image the OCR engine saw, is scaled onto it.
+		pdf.AddPageFormat("P", fpdf.SizeType{Wd: geom.w, Ht: geom.h})
 
 		tpl := importer.ImportPageFromStream(pdf, &rs, targetPage, "/MediaBox")
-		importer.UseImportedTemplate(pdf, tpl, 0, 0, page.BBox.X2, 0)
+		importer.UseImportedTemplate(pdf, tpl, 0, 0, geom.w, geom.h)
 
-		identity := func(x, y float64) (float64, float64) {
-			return x, y
+		transform := func(x, y float64) (float64, float64) {
+			return normalizeCoords(x, y, hocrW, hocrH, geom.w, geom.h)
 		}
 
 		// Pass the page number to drawOCRLayer
-		drawOCRLayer(pdf, page, debug, layerName, actualPageNum, identity, fontConfig)
+		drawOCRLayer(pdf, page, debug, layerName, actualPageNum, transform, fontConfig)
 	}
 
 	var buf bytes.Buffer

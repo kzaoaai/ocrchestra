@@ -20,10 +20,13 @@ var ErrPageGeometry = errors.New("hOCR page shape does not match the PDF page")
 // small page by well under 1%.
 const aspectTolerance = 0.03
 
-// pageGeometry is a PDF page's size as displayed, in points: its MediaBox,
-// with width and height swapped when /Rotate turns it by 90 or 270 degrees.
+// pageGeometry is a PDF page's size as displayed, in points, and the box it
+// is imported with: its CropBox, the part a viewer shows and an OCR engine
+// reads, or its MediaBox when it has none. Width and height are swapped when
+// /Rotate turns the page by 90 or 270 degrees.
 type pageGeometry struct {
 	w, h float64
+	box  string
 }
 
 // pageGeometries reads every page's displayed size, keyed by 1-based page
@@ -47,11 +50,16 @@ func pageGeometries(rs io.ReadSeeker) (result map[int]pageGeometry, err error) {
 
 	result = make(map[int]pageGeometry, len(sizes))
 	for n, boxes := range sizes {
-		box, ok := boxes["/MediaBox"]
-		if !ok {
-			return nil, fmt.Errorf("page %d has no MediaBox", n)
+		// gofpdi reports a box the page lacks as an empty map.
+		name := "/CropBox"
+		box := boxes[name]
+		if box["w"] <= 0 || box["h"] <= 0 {
+			name = "/MediaBox"
+			if box = boxes[name]; len(box) == 0 {
+				return nil, fmt.Errorf("page %d has no MediaBox", n)
+			}
 		}
-		g := pageGeometry{w: box["w"], h: box["h"]}
+		g := pageGeometry{w: box["w"], h: box["h"], box: name}
 		if rotations[n]%180 == 90 {
 			g.w, g.h = g.h, g.w
 		}

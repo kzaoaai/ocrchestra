@@ -49,7 +49,7 @@ func modifyExistingPDF(
 		// pixels of the image the OCR engine saw, is scaled onto it.
 		pdf.AddPageFormat("P", fpdf.SizeType{Wd: geom.w, Ht: geom.h})
 
-		tpl := importer.ImportPageFromStream(pdf, &rs, targetPage, "/MediaBox")
+		tpl := importer.ImportPageFromStream(pdf, &rs, targetPage, geom.box)
 		importer.UseImportedTemplate(pdf, tpl, 0, 0, geom.w, geom.h)
 
 		transform := func(x, y float64) (float64, float64) {

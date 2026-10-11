@@ -117,13 +117,8 @@ func TestApplyOCRRejectsTurnedPage(t *testing.T) {
 	}
 }
 
-func TestPageGeometriesHonourRotate(t *testing.T) {
-	objs := []string{
-		"<< /Type /Catalog /Pages 2 0 R >>",
-		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 150] /Rotate 90 /Resources << >> /Contents 4 0 R >>",
-		"<< /Length 0 >>\nstream\n\nendstream",
-	}
+// rawPDF writes objects 1..n as a PDF; object 1 is the catalog.
+func rawPDF(objs ...string) []byte {
 	var b bytes.Buffer
 	b.WriteString("%PDF-1.4\n")
 	offsets := make([]int, len(objs))
@@ -137,12 +132,73 @@ func TestPageGeometriesHonourRotate(t *testing.T) {
 		fmt.Fprintf(&b, "%010d 00000 n \n", off)
 	}
 	fmt.Fprintf(&b, "trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", len(objs)+1, xref)
+	return b.Bytes()
+}
 
-	got, err := pageGeometries(io.ReadSeeker(bytes.NewReader(b.Bytes())))
+func TestPageGeometriesHonourRotate(t *testing.T) {
+	pdf := rawPDF(
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 150] /Rotate 90 /Resources << >> /Contents 4 0 R >>",
+		"<< /Length 0 >>\nstream\n\nendstream",
+	)
+	got, err := pageGeometries(io.ReadSeeker(bytes.NewReader(pdf)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if g := got[1]; g.w != 150 || g.h != 300 {
 		t.Errorf("page 1 is %vx%v, want 150x300", g.w, g.h)
+	}
+}
+
+// TestApplyOCRKeepsTheCropBox covers a page whose CropBox shows only part of
+// its MediaBox, away from the origin, as iOS writes a scanned page: the
+// output page is the CropBox, and the hOCR, read from what the CropBox shows,
+// lands on it.
+func TestApplyOCRKeepsTheCropBox(t *testing.T) {
+	const content = "0 0 0 rg 30 20 230 160 re f\n"
+	crop := [2]float64{250, 180}
+	pdf := rawPDF(
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /CropBox [20 10 270 190] /Resources << >> /Contents 4 0 R >>",
+		fmt.Sprintf("<< /Length %d >>\nstream\n%sendstream", len(content), content),
+	)
+	h := hocr.HOCR{Pages: []hocr.Page{pixelPage(1, crop, "WORD1")}}
+	config := DefaultConfig()
+	config.LogWarnings = false
+	out, err := ApplyOCR(pdf, &h, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := pageGeometries(io.ReadSeeker(bytes.NewReader(out)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g := got[1]; math.Abs(g.w-crop[0]) > 0.5 || math.Abs(g.h-crop[1]) > 0.5 {
+		t.Errorf("page 1 is %.1fx%.1f, want %vx%v", g.w, g.h, crop[0], crop[1])
+	}
+
+	if _, err := exec.LookPath("pdftotext"); err != nil {
+		t.Skip("pdftotext not installed")
+	}
+	path := filepath.Join(t.TempDir(), "out.pdf")
+	if err := os.WriteFile(path, out, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bbox, err := exec.Command("pdftotext", "-q", "-bbox", path, "-").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">WORD1<`).FindStringSubmatch(string(bbox))
+	if m == nil {
+		t.Fatalf("WORD1 not found:\n%s", bbox)
+	}
+	v := make([]float64, 4)
+	for i := range v {
+		v[i], _ = strconv.ParseFloat(m[i+1], 64)
+	}
+	if cx, cy := (v[0]+v[2])/2, (v[1]+v[3])/2; math.Abs(cx-crop[0]/2) > 5 || math.Abs(cy-crop[1]/2) > 10 {
+		t.Errorf("WORD1 centred at %.0f,%.0f, want about %.0f,%.0f", cx, cy, crop[0]/2, crop[1]/2)
 	}
 }
